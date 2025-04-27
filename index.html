@@ -1,0 +1,148 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resume Builder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <style>
+    #resumePreview { display: none; }
+    #resumePreview.show { display: block; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-4 max-w-4xl">
+    <h1 class="text-3xl font-bold text-center mb-6">Resume Builder</h1>
+
+    <!-- Form Section -->
+    <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+      <h2 class="text-2xl font-semibold mb-4">Enter Your Details</h2>
+      <form id="resumeForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Full Name</label>
+          <input type="text" id="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="John Doe" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Email</label>
+          <input type="email" id="email" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="john@example.com" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Phone</label>
+          <input type="tel" id="phone" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="123-456-7890">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Work Experience</label>
+          <textarea id="experience" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" rows="4" placeholder="Software Engineer at XYZ Corp, 2020-2023"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Education</label>
+          <textarea id="education" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" rows="4" placeholder="B.S. Computer Science, ABC University, 2016-2020"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Skills</label>
+          <input type="text" id="skills" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="JavaScript, Python, HTML/CSS">
+        </div>
+        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Generate Resume</button>
+      </form>
+    </div>
+
+    <!-- Resume Preview Section -->
+    <div id="resumePreview" class="bg-white p-6 rounded-lg shadow-md">
+      <h2 class="text-2xl font-semibold mb-4">Resume Preview</h2>
+      <div id="resumeOutput" class="border p-4">
+        <h3 id="previewName" class="text-xl font-bold"></h3>
+        <p id="previewEmail" class="text-gray-600"></p>
+        <p id="previewPhone" class="text-gray-600"></p>
+        <h4 class="text-lg font-semibold mt-4">Work Experience</h4>
+        <p id="previewExperience" class="text-gray-700"></p>
+        <h4 class="text-lg font-semibold mt-4">Education</h4>
+        <p id="previewEducation" class="text-gray-700"></p>
+        <h4 class="text-lg font-semibold mt-4">Skills</h4>
+        <p id="previewSkills" class="text-gray-700"></p>
+      </div>
+      <button id="downloadBtn" class="mt-4 w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">Download as PDF</button>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('resumeForm');
+    const resumePreview = document.getElementById('resumePreview');
+    const resumeOutput = document.getElementById('resumeOutput');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+
+      // Get form values
+      const name = document.getElementById('name').value;
+      const email = document.getElementById('email').value;
+      const phone = document.getElementById('phone').value;
+      const experience = document.getElementById('experience').value;
+      const education = document.getElementById('education').value;
+      const skills = document.getElementById('skills').value;
+
+      // Update preview
+      document.getElementById('previewName').textContent = name;
+      document.getElementById('previewEmail').textContent = email;
+      document.getElementById('previewPhone').textContent = phone;
+      document.getElementById('previewExperience').textContent = experience || 'No experience provided';
+      document.getElementById('previewEducation').textContent = education || 'No education provided';
+      document.getElementById('previewSkills').textContent = skills || 'No skills provided';
+
+      // Show preview
+      resumePreview.classList.add('show');
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      const opt = {
+        margin: 1,
+        filename: 'resume.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
+      html2pdf().set(opt).from(resumeOutput).save();
+    });
+  </script>
+</body>
+</html>
