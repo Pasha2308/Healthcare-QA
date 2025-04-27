@@ -1,0 +1,166 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Resume Builder</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    #resumePreview { display: none; }
+    #resumePreview.show { display: block; }
+  </style>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-4 max-w-4xl">
+    <h1 class="text-3xl font-bold text-center mb-6">AI-Powered Resume Builder</h1>
+
+    <!-- Form Section -->
+    <div class="bg-white p-6 rounded-lg shadow-md mb-6">
+      <h2 class="text-2xl font-semibold mb-4">Enter Your Details</h2>
+      <form id="resumeForm" class="space-y-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Full Name</label>
+          <input type="text" id="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="John Doe" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Email</label>
+          <input type="email" id="email" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="john@example.com" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Phone</label>
+          <input type="tel" id="phone" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="123-456-7890">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Job Title</label>
+          <input type="text" id="jobTitle" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="Software Engineer" required>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Experience Level</label>
+          <select id="experienceLevel" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" required>
+            <option value="entry">Entry-Level (0-2 years)</option>
+            <option value="mid">Mid-Level (3-5 years)</option>
+            <option value="senior">Senior-Level (6+ years)</option>
+          </select>
+        </div>
+        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700">Generate Resume</button>
+      </form>
+    </div>
+
+    <!-- Resume Preview Section -->
+    <div id="resumePreview" class="bg-white p-6 rounded-lg shadow-md">
+      <h2 class="text-2xl font-semibold mb-4">Resume Preview</h2>
+      <div id="resumeOutput" class="border p-4 text-gray-800">
+        <h3 id="previewName" class="text-xl font-bold"></h3>
+        <p id="previewContact" class="text-sm text-gray-600"></p>
+        <h4 class="text-lg font-semibold mt-4 border-b">Professional Summary</h4>
+        <p id="previewSummary" class="mt-2"></p>
+        <h4 class="text-lg font-semibold mt-4 border-b">Work Experience</h4>
+        <ul id="previewExperience" class="mt-2 list-disc list-inside"></ul>
+        <h4 class="text-lg font-semibold mt-4 border-b">Education</h4>
+        <p id="previewEducation" class="mt-2"></p>
+        <h4 class="text-lg font-semibold mt-4 border-b">Skills</h4>
+        <p id="previewSkills" class="mt-2"></p>
+      </div>
+      <button id="downloadBtn" class="mt-4 w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">Download as PDF</button>
+    </div>
+  </div>
+
+  <script>
+    const { jsPDF } = window.jspdf;
+    const form = document.getElementById('resumeForm');
+    const resumePreview = document.getElementById('resumePreview');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // Simulated LLM content generation based on job title and experience level
+    function generateResumeContent(jobTitle, experienceLevel) {
+      const summaries = {
+        entry: `Enthusiastic ${jobTitle} with a strong foundation in relevant technologies and a passion for delivering high-quality solutions. Eager to contribute to team success through collaboration and continuous learning.`,
+        mid: `Accomplished ${jobTitle} with ${experienceLevel === 'mid' ? '3-5 years' : '6+ years'} of experience in designing and implementing innovative solutions. Proven ability to drive project success The content generation simulates an LLM by creating ATS-friendly content based on user input, ensuring the resume is professional and scannable by ATS systems.
+
+### Why This Solves Your Issues
+- **Professional Resume**: The layout is clean, single-column, and uses standard headings (“Professional Summary,” “Work Experience,” etc.), making it ATS-friendly. It includes action verbs, measurable achievements, and keywords tailored to the job title.
+- **Auto-Fill via “LLM”**: The script simulates LLM behavior by generating content based on job title and experience level, reducing manual input. For a real LLM, you’d need a backend, which I’ll explain below.
+- **PDF Fix**: `jsPDF` directly renders text to the PDF, avoiding the blank PDF issue caused by `html2pdf.js`’s rendering problems.
+- **ATS Compatibility**: The resume avoids graphics, tables, or complex formatting, ensuring ATS parsers can read it. It uses standard fonts (Arial) and formats (PDF).
+
+### Deploying the Updated Code
+Since your GitHub Pages site is working, update the `index.html` file:
+1. Go to `https://github.com/pasha2308/Resume-Builder`.
+2. Open `index.html`, click “Edit,” and replace its content with the new code above.
+3. Commit the changes.
+4. Wait 5–10 minutes, then visit `https://pasha2308.github.io/Resume-Builder/` to test.
+5. Test the form, preview, and PDF download. The PDF should now contain the resume content.
+
+### Adding a Real LLM (Future Step)
+To integrate a real LLM (e.g., Groq API, which you’re learning):
+- **Set Up a Backend**: Use Node.js to create a server that calls the Groq API to generate resume content based on user input.
+- **API Integration**: Send user inputs (job title, experience) to the API, which returns professional summaries, bullet points, and skills.
+- **Host the Backend**: Deploy on platforms like Render or Heroku.
+- **Update Frontend**: Modify the JavaScript to fetch content from your backend instead of the simulated logic.
+- **Example Groq API Call** (pseudo-code):
+  ```javascript
+  const response = await fetch('your-backend-url/generate-resume', {
+    method: 'POST',
+    body: JSON.stringify({ jobTitle, experienceLevel })
+  });
+  const { summary, experience, skills } = await response.json();
+  ```
+Since you’re still learning, I recommend mastering this static version first, then exploring backend development in Q3 2025 when you plan to hire a technical co-founder.
+
+### Testing and Validation
+- **Test ATS Compatibility**: Upload the generated PDF to an ATS checker like Jobscan’s Resume Scanner (`www.jobscan.co`) to confirm it parses correctly.
+- **User Experience**: Ensure the form is intuitive and the PDF looks professional. Share the link with a friend to get feedback.
+- **Fixes**: If the PDF is still blank or content isn’t generating, check the browser console (Right-click > Inspect > Console) for errors and share them with me.
+
+### Sources
+This solution incorporates best practices for ATS-friendly resumes from:
+- Jobscan: Use simple formats, standard headings, and keywords (`www.jobscan.co`).[](https://www.jobscan.co/blog/20-ats-friendly-resume-templates/)
+- Resume.io: Single-column layouts and clear fonts ensure ATS compatibility (`resume.io`).[](https://resume.io/blog/how-to-build-a-bulletproof-ATS-friendly-resume)
+- TealHQ: AI-driven content generation for tailored resumes (`www.tealhq.com`).[](https://www.tealhq.com/tools/resume-builder)
+
+### Next Steps
+- Deploy the new `index.html` and test it.
+- Share any issues (e.g., PDF errors, content quality) or the updated link to confirm it’s working.
+- If you want to start with the Groq API sooner, let me know, and I can provide a basic Node.js example.
+
+Let me know how it goes or if you need help with deployment![](https://www.jobscan.co/blog/20-ats-friendly-resume-templates/)[](https://resume.io/blog/how-to-build-a-bulletproof-ATS-friendly-resume)[](https://www.tealhq.com/tools/resume-builder)
