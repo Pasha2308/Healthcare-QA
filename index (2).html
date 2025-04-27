@@ -1,0 +1,182 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillDoze Interview & QA Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+  <div class="container mx-auto p-4 max-w-4xl">
+    <h1 class="text-3xl font-bold text-center mb-6">SkillDoze Interview & QA Agent</h1>
+    <p class="text-center text-gray-600 mb-8">Prepare for Medical Coding and RCM Interviews or Verify Coding Accuracy</p>
+
+    <!-- Mode Selection -->
+    <div class="bg-white p-6 rounded-lg shadow-md mb-8">
+      <h2 class="text-2xl font-semibold mb-4">Choose Mode</h2>
+      <select id="mode" class="w-full p-2 border rounded mb-4">
+        <option value="qa">QA (Ask about medical coding or RCM)</option>
+        <option value="interview">Mock Interview (Practice questions)</option>
+      </select>
+      <div id="interviewInput" class="hidden">
+        <p id="interviewQuestion" class="p-4 bg-blue-50 rounded mb-4"></p>
+        <textarea id="interviewAnswer" placeholder="Type your answer here..." class="w-full p-2 border rounded mb-2" rows="4"></textarea>
+      </div>
+      <div id="qaInput">
+        <input id="qaQuery" type="text" placeholder="e.g., Check code J45.909 or Explain RCM process" class="w-full p-2 border rounded mb-2">
+      </div>
+      <button onclick="handleSubmit()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Submit</button>
+    </div>
+
+    <!-- Chat Output -->
+    <div class="bg-white p-6 rounded-lg shadow-md">
+      <h2 class="text-2xl font-semibold mb-4">Responses</h2>
+      <div id="chatOutput" class="h-64 overflow-y-auto border p-4 bg-gray-50"></div>
+    </div>
+  </div>
+
+  <script>
+    // Groq API Configuration
+    const GROQ_API_KEY = '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';
+    const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+    // Sample interview questions
+    const interviewQuestions = [
+      'How do you ensure accuracy when coding with ICD-10 and CPT systems?',
+      'What steps do you take to resolve a claim denial in RCM?',
+      'Describe a time you clarified a coding discrepancy with a physician.',
+      'What is the difference between ICD-10-CM and CPT codes?',
+      'How do you stay 4stay compliant with HIPAA regulations?'
+    ];
+
+    let currentQuestion = null;
+
+    // Toggle input fields based on mode
+    document.getElementById('mode').addEventListener('change', function() {
+      const mode = this.value;
+      document.getElementById('interviewInput').classList.toggle('hidden', mode !== 'interview');
+      document.getElementById('qaInput').classList.toggle('hidden', mode === 'interview');
+      if (mode === 'interview') {
+        currentQuestion = interviewQuestions[Math.floor(Math.random() * interviewQuestions.length)];
+        document.getElementById('interviewQuestion').textContent = currentQuestion;
+        document.getElementById('interviewAnswer').value = '';
+      }
+    });
+
+    // Handle form submission
+    async function handleSubmit() {
+      const mode = document.getElementById('mode').value;
+      const outputDiv = document.getElementById('chatOutput');
+
+      // Append user input
+      const userMessage = document.createElement('div');
+      userMessage.className = 'text-right mb-2';
+      let inputText = mode === 'interview' 
+        ? `Question: ${currentQuestion}\nAnswer: ${document.getElementById('interviewAnswer').value}`
+        : document.getElementById('qaQuery').value;
+      userMessage.innerHTML = `<span class="bg-blue-100 p-2 rounded">You: ${inputText}</span>`;
+      outputDiv.appendChild(userMessage);
+
+      // Prepare system prompt
+      const systemPrompt = `You are a healthcare AI agent specializing in Revenue Cycle Management (RCM) and medical coding for SkillDoze. You assist students with:
+        - Mock Interviews: Provide feedback on their answers to medical coding/RCM questions. Be constructive, highlight strengths, suggest improvements, and include keywords like ICD-10, CPT, HIPAA.
+        - QA: Answer questions about medical coding (ICD-10, CPT, HCPCS) or RCM processes accurately, referencing guidelines (e.g., ICD-10-CM 2023, CPT 2023). For code checks, verify accuracy and explain.
+        Respond concisely, professionally, and educationally, using healthcare terminology.`;
+
+      // Prepare user message
+      const userPrompt = mode === 'interview'
+        ? `Evaluate this interview answer for the question "${currentQuestion}":\n${document.getElementById('interviewAnswer').value}\nProvide feedback on clarity, accuracy, and completeness, and suggest improvements.`
+        : `Answer this QA query: ${inputText}`;
+
+      try {
+        const response = await fetch(GROQ_API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${GROQ_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'llama-3.3-70b-versatile',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt }
+            ],
+            max_tokens: 500,
+            temperature: 0.7
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const aiResponse = data.choices[0].message.content;
+
+        // Append AI response
+        const aiMessage = document.createElement('div');
+        aiMessage.className = 'text-left mb-2';
+        aiMessage.innerHTML = `<span class="bg-gray-200 p-2 rounded">AI: ${aiResponse}</span>`;
+        outputDiv.appendChild(aiMessage);
+
+        // Reset for next interaction
+        if (mode === 'interview') {
+          currentQuestion = interviewQuestions[Math.floor(Math.random() * interviewQuestions.length)];
+          document.getElementById('interviewQuestion').textContent = currentQuestion;
+          document.getElementById('interviewAnswer').value = '';
+        } else {
+          document.getElementById('qaQuery').value = '';
+        }
+      } catch (error) {
+        console.error('Error calling Groq API:', error);
+        const errorMessage = document.createElement('div');
+        errorMessage.className = 'text-left mb-2';
+        errorMessage.innerHTML = `<span class="bg-red-100 p-2 rounded">AI: Sorry, there was an error processing your request. Please try again.</span>`;
+        outputDiv.appendChild(errorMessage);
+      }
+
+      // Scroll to bottom
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+    }
+  </script>
+</body>
+</html>
